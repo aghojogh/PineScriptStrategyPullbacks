@@ -1,0 +1,234 @@
+//@version=5
+strategy("Candlestick Line Strategy", overlay=true, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=10)
+
+// Input parameters
+lookback_period = input.int(50, title="Lookback Period for Base Red Candle", minval=1, maxval=200)
+
+// Variables to store strategy lines
+var float line1 = na
+var float line2 = na  
+var float line3 = na
+var float line4 = na
+var float line5 = na
+var float line6 = na
+var int base_red_index = na
+var bool strategy_active = false
+var float stop_loss_distance = na
+var bool sell_mode = true  // true = sell mode, false = buy mode after stop loss
+
+// Function to check if current candle is red
+is_red_candle() =>
+    close < open
+
+// Function to check if current candle is green  
+is_green_candle() =>
+    close > open
+
+// Function to get candle length (with safety check)
+get_candle_length(index) =>
+    if index <= 5000 and index >= 0
+        math.abs(high[index] - low[index])
+    else
+        0.0
+
+// Function to check if candle crosses a line (with safety check)
+candle_crosses_line(index, line_value) =>
+    if index <= 5000 and index >= 0
+        low[index] <= line_value and high[index] >= line_value
+    else
+        false
+
+// Main strategy logic
+if barstate.isconfirmed
+    // Look for base red candle
+    if is_red_candle() and not strategy_active
+        base_red_candle_high = high
+        base_red_candle_low = low
+        base_red_candle_length = base_red_candle_high - base_red_candle_low
+        
+        // Check candle behind (previous candle)
+        behind_candle_exists = true
+        behind_is_red = is_red_candle()[1]
+        behind_high = high[1]
+        behind_low = low[1]
+        
+        // Calculate Line 1 (always low of base red candle)
+        line1 := base_red_candle_low
+        
+        // Calculate Line 3 based on behind candle
+        if behind_is_red or not behind_candle_exists
+            // Scenario 1: Red candle behind or no candle
+            line3 := base_red_candle_high + base_red_candle_length
+        else
+            // Behind candle is green
+            if behind_high > base_red_candle_high
+                // Green candle high > base red high
+                distance = behind_high - base_red_candle_low
+                line3 := base_red_candle_low + (2 * distance)
+            else
+                // Green candle high <= base red high
+                line3 := base_red_candle_high + base_red_candle_length
+        
+        // Calculate Line 2 (middle of Line 1 and Line 3)
+        line2 := (line1 + line3) / 2
+        
+        // Initialize other variables
+        base_red_index := bar_index
+        strategy_active := true
+        sell_mode := true
+        
+        // We'll calculate the rest of the lines as we go
+        
+    // If strategy is active, look for candles crossing Line 2
+    if strategy_active and na(line4)
+        bars_since_base = bar_index - base_red_index
+        
+        // Look for first candle that crosses Line 2 (after base candle)
+        if bars_since_base > 0 and bars_since_base <= 100 and candle_crosses_line(0, line2)
+            // Found first crossing candle (candle_1)
+            candle1_length = get_candle_length(0)
+            candle2_length = 0.0
+            candle3_length = 0.0
+            
+            // Safely get candle lengths
+            if bars_since_base >= 2
+                candle2_length := get_candle_length(1)
+            if bars_since_base >= 3  
+                candle3_length := get_candle_length(2)
+            
+            // Check crossing conditions for the three candles
+            candle1_crosses = candle_crosses_line(0, line2)
+            candle2_crosses = bars_since_base >= 2 ? candle_crosses_line(1, line2) : false
+            candle3_crosses = bars_since_base >= 3 ? candle_crosses_line(2, line2) : false
+            
+            // Calculate Sum based on scenarios
+            sum = 0.0
+            if candle1_crosses and candle2_crosses and candle3_crosses
+                // Scenario 1: All three cross
+                sum := candle1_length + candle2_length + candle3_length
+            else if candle1_crosses and not candle2_crosses and not candle3_crosses
+                // Scenario 2: Only first crosses
+                sum := candle1_length + candle2_length
+            else if candle1_crosses and not candle2_crosses and candle3_crosses
+                // Scenario 3: First and third cross
+                sum := candle1_length + candle2_length + candle3_length
+            else if candle1_crosses and candle2_crosses and not candle3_crosses
+                // Scenario 4: First and second cross
+                sum := candle1_length + candle2_length
+           // else
+            //    sum := candle1_length
+            
+            // Calculate Line 4
+            line4 := line3 + sum
+            
+            // Calculate Line 5
+            line5 := line1 + (2 * (line4 - line1))
+            
+            // Calculate Sum_1 (sum of parts of candles below Line 4)
+            sum1 = 0.0
+            max_lookback = math.min(bars_since_base, 100)  // Limit lookback to prevent errors
+            for i = 0 to max_lookback
+                if i < bar_index - base_red_index + 1
+                    candle_low_val = low[i]
+                    candle_high_val = high[i]
+                    if candle_low_val < line4 and candle_high_val > line4
+                        sum1 := sum1 + (line4 - candle_low_val)
+            
+            // Calculate Line 6 (SELL trigger)
+            line6 := line5 + sum1
+            
+            // Calculate stop loss distance (height between line 1 and line 3)
+            stop_loss_distance := line3 - line1
+
+// Plot lines
+plot(line1, color=color.blue, linewidth=2, title="Line 1 (Base Low)")
+plot(line2, color=color.orange, linewidth=2, title="Line 2 (Middle)")  
+plot(line3, color=color.purple, linewidth=2, title="Line 3")
+plot(line4, color=color.maroon, linewidth=2, title="Line 4")
+plot(line5, color=color.fuchsia, linewidth=2, title="Line 5")
+plot(line6, color=color.red, linewidth=3, title="Line 6 (Trigger)")
+
+// Trading logic
+if strategy_active and not na(line6)
+    if sell_mode
+        // SELL mode - wait for price to hit Line 6
+        if high >= line6 and strategy.position_size == 0
+            strategy.entry("SELL", strategy.short, comment="Sell at Line 6")
+            // Risk:Reward = 1:0.25 (stop loss = line1 to line3 distance, take profit = 0.25 of that)
+            take_profit_distance = stop_loss_distance * 0.25
+            strategy.exit("SELL_EXIT", "SELL", loss=stop_loss_distance, profit=take_profit_distance, comment="1:0.25 R/R")
+        
+        // Check if stop loss was hit
+        if strategy.position_size == 0 and strategy.closedtrades > 0
+            last_trade = strategy.closedtrades - 1
+            if strategy.closedtrades.exit_id(last_trade) == "SELL_EXIT"
+                // Stop loss hit, switch to BUY mode
+                sell_mode := false
+    else
+        // BUY mode - Line 6 becomes buy trigger after stop loss
+        if low <= line6 and strategy.position_size == 0
+            strategy.entry("BUY", strategy.long, comment="Buy at Line 6")
+            // Risk:Reward = 1:0.25 for buy trades too
+            take_profit_distance = stop_loss_distance * 0.25
+            strategy.exit("BUY_EXIT", "BUY", loss=stop_loss_distance, profit=take_profit_distance, comment="1:0.25 R/R")
+        
+        // Reset after buy trade
+        if strategy.position_size == 0 and strategy.closedtrades > 0
+            last_trade = strategy.closedtrades - 1
+            if strategy.closedtrades.entry_id(last_trade) == "BUY"
+                // Reset strategy to look for new base red candle
+                strategy_active := false
+                line1 := na
+                line2 := na
+                line3 := na
+                line4 := na
+                line5 := na
+                line6 := na
+                sell_mode := true
+
+// Visual indicators
+plotshape(strategy_active and bar_index == base_red_index, style=shape.triangleup, location=location.belowbar, color=color.yellow, size=size.normal, title="Base Red Candle")
+
+// Labels for line values
+if barstate.islast and strategy_active
+    if not na(line1)
+        label.new(bar_index, line1, "Line 1: " + str.tostring(line1, "#.##"), color=color.blue, textcolor=color.white, size=size.small)
+    if not na(line2)  
+        label.new(bar_index, line2, "Line 2: " + str.tostring(line2, "#.##"), color=color.orange, textcolor=color.white, size=size.small)
+    if not na(line3)
+        label.new(bar_index, line3, "Line 3: " + str.tostring(line3, "#.##"), color=color.purple, textcolor=color.white, size=size.small)
+    if not na(line4)
+        label.new(bar_index, line4, "Line 4: " + str.tostring(line4, "#.##"), color=color.maroon, textcolor=color.white, size=size.small)
+    if not na(line5)
+        label.new(bar_index, line5, "Line 5: " + str.tostring(line5, "#.##"), color=color.fuchsia, textcolor=color.white, size=size.small)
+    if not na(line6)
+        label.new(bar_index, line6, "Line 6: " + str.tostring(line6, "#.##"), color=color.red, textcolor=color.white, size=size.small)
+
+// Table showing strategy status
+if barstate.islast
+    var table info_table = table.new(position.top_right, 2, 8, bgcolor=color.white, border_width=1)
+    
+    table.cell(info_table, 0, 0, "Strategy Status", text_color=color.black, bgcolor=color.gray)
+    table.cell(info_table, 1, 0, strategy_active ? "Active" : "Waiting", text_color=color.black)
+    
+    table.cell(info_table, 0, 1, "Mode", text_color=color.black)
+    table.cell(info_table, 1, 1, sell_mode ? "SELL" : "BUY", text_color=color.black)
+    
+    table.cell(info_table, 0, 2, "Stop Loss Dist", text_color=color.black)
+    table.cell(info_table, 1, 2, na(stop_loss_distance) ? "N/A" : str.tostring(stop_loss_distance, "#.##"), text_color=color.black)
+    
+    table.cell(info_table, 0, 3, "Risk:Reward", text_color=color.black)
+    table.cell(info_table, 1, 3, "1:0.25", text_color=color.black)
+    
+    table.cell(info_table, 0, 4, "Total Trades", text_color=color.black)
+    table.cell(info_table, 1, 4, str.tostring(strategy.closedtrades), text_color=color.black)
+    
+    table.cell(info_table, 0, 5, "Win Rate", text_color=color.black)
+    win_rate = strategy.closedtrades > 0 ? (strategy.wintrades / strategy.closedtrades) * 100 : 0
+    table.cell(info_table, 1, 5, str.tostring(win_rate, "#.#") + "%", text_color=color.black)
+    
+    table.cell(info_table, 0, 6, "Net Profit", text_color=color.black)
+    table.cell(info_table, 1, 6, str.tostring(strategy.netprofit, "#.##"), text_color=strategy.netprofit >= 0 ? color.green : color.red)
+    
+    table.cell(info_table, 0, 7, "Trigger Price", text_color=color.black)
+    table.cell(info_table, 1, 7, na(line6) ? "N/A" : str.tostring(line6, "#.##"), text_color=color.red)
