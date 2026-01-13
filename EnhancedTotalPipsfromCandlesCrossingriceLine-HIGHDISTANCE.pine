@@ -1,0 +1,104 @@
+//@version=5
+indicator("Enhanced Total Pips from Candles Crossing Price Line - HIGH DISTANCE", overlay=true)
+
+// User inputs
+startTime = input.time(timestamp("2025-04-25 17:40"), "Start Time")
+endTime   = input.time(timestamp("2025-04-25 21:15"), "End Time")
+priceLine = input.float(100.0, "Price Level")
+pipSize   = input.float(0.01, "Pip Size (e.g. 0.0001 for Forex, 0.01 for Gold, 1 for Indices)")
+
+// Additional options
+showIndividualLabels = input.bool(true, "Show Individual Pip Labels")
+showTotalLabel = input.bool(true, "Show Total Pips Label")
+resetDaily = input.bool(false, "Reset Total Daily")
+countMethod = input.string("High Distance", "Calculation Method", options=["High Distance", "Body Distance", "Wick Distance"])
+
+// Check if we're within the time window
+inRange = time >= startTime and time <= endTime
+
+// Check if candle crosses the price line
+crossed = inRange and low <= priceLine and high >= priceLine
+
+// Calculate pip distance based on selected method
+pipValue = 0.0
+if crossed
+    switch countMethod
+        "High Distance" => pipValue := (high - priceLine) / pipSize
+        "Body Distance" => pipValue := (math.max(open, close) - priceLine) / pipSize
+        "Wick Distance" => pipValue := (high - low) / pipSize
+
+// Reset logic for daily reset option
+var float totalPips = 0.0
+var int lastDay = 0
+currentDay = dayofweek
+
+if resetDaily and currentDay != lastDay
+    totalPips := 0.0
+    lastDay := currentDay
+
+// Accumulate total pip value
+if crossed
+    totalPips := totalPips + pipValue
+
+// Statistics tracking
+var int crossingCount = 0
+var float avgPips = 0.0
+
+if crossed
+    crossingCount := crossingCount + 1
+    avgPips := totalPips / crossingCount
+
+// Draw horizontal price line with better styling
+hline(priceLine, "Price Level", color=color.orange, linestyle=hline.style_dashed)
+
+// Mark candles that crossed the line
+plotshape(crossed, location=location.belowbar, style=shape.triangleup, 
+          color=color.red, size=size.small, title="Crossing Candle")
+
+// Background highlighting for time range
+bgcolor(inRange ? color.new(color.yellow, 95) : na, title="Time Range Background")
+
+// Display total pips label with enhanced information
+var label pipLabel = na
+if showTotalLabel and (barstate.islast or (bar_index % 20 == 0 and totalPips > 0))
+    if not na(pipLabel)
+        label.delete(pipLabel)
+    
+    labelText = "TOTAL: " + str.tostring(totalPips, "#.##") + " pips\n" + "COUNT: " + str.tostring(crossingCount) + " candles\n" + "AVG: " + str.tostring(avgPips, "#.##") + " pips"
+    
+    pipLabel := label.new(x=bar_index, y=high + (high - low) * 1.5, text=labelText, 
+                         style=label.style_label_down, textcolor=color.white, 
+                         color=color.blue, size=size.normal)
+
+// Plot running totals and statistics
+plot(totalPips, title="Total Pips Running Sum", color=color.blue, linewidth=2)
+plot(pipValue, title="Current Pip Value", color=color.green, linewidth=1)
+plot(avgPips, title="Average Pips per Crossing", color=color.purple, linewidth=1)
+
+// Show individual pip value on each crossing candle
+if crossed and showIndividualLabels
+    labelColor = pipValue > avgPips ? color.green : color.red
+    label.new(x=bar_index, y=high + (high - low) * 0.1, 
+              text=str.tostring(pipValue, "#.##") + "p", 
+              style=label.style_label_down, textcolor=color.white, 
+              color=labelColor, size=size.tiny)
+
+// Table for detailed statistics (optional)
+if barstate.islast
+    var table statsTable = table.new(position.top_right, 2, 4, bgcolor=color.white, border_width=1)
+    
+    table.cell(statsTable, 0, 0, "Metric", bgcolor=color.gray, text_color=color.white)
+    table.cell(statsTable, 1, 0, "Value", bgcolor=color.gray, text_color=color.white)
+    
+    table.cell(statsTable, 0, 1, "Total Pips", text_color=color.black)
+    table.cell(statsTable, 1, 1, str.tostring(totalPips, "#.##"), text_color=color.blue)
+    
+    table.cell(statsTable, 0, 2, "Crossings", text_color=color.black)
+    table.cell(statsTable, 1, 2, str.tostring(crossingCount), text_color=color.black)
+    
+    table.cell(statsTable, 0, 3, "Avg/Cross", text_color=color.black)
+    table.cell(statsTable, 1, 3, str.tostring(avgPips, "#.##"), text_color=color.purple)
+
+// Alerts
+alertcondition(crossed, title="Price Line Crossed", message="Candle crossed the price line at {{ticker}} - Pips: {{plot_0}}")
+alertcondition(totalPips > totalPips[1], title="Total Pips Updated", message="Total pips updated: {{plot_0}} pips")
