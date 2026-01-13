@@ -2,11 +2,11 @@
 
 A sophisticated Pine Script trading strategy for TradingView that uses complex mathematical calculations to identify high-probability resistance and support levels based on a manually selected red candle.
 
-## 🎯 Overview
+## Overview
 
 This strategy builds multiple resistance levels through a series of calculations, creating a "ladder" of price zones that incorporate historical context, market momentum, and selling pressure. It trades both directions (SHORT and LONG) with a 1:1 risk-reward ratio.
 
-## 📊 Key Features
+## Key Features
 
 ### Manual Candle Selection
 - **Time-based selection**: Choose your base red candle by specifying exact date and time
@@ -41,7 +41,7 @@ This strategy builds multiple resistance levels through a series of calculations
 - **Breakeven Win Rate**: 50%
 - **Maximum Trades**: 2 per setup (one SELL attempt, one BUY recovery if needed)
 
-## 🔬 Calculation Methodology
+##  Calculation Methodology
 
 ### Line 3 Calculation (Three Scenarios)
 Analyzes the candle **before** the base red candle:
@@ -66,21 +66,21 @@ Accumulates evidence from all candles after base red candle:
 - **Line 5** = Line 1 + (2 × distance from Line 1 to Line 4)
 - **Line 6** = Line 5 + Sum_1
 
-## 🎨 Customization Options
+##  Customization Options
 
 - **Display Controls**: Show/hide lines, labels, calculation table
 - **Color Customization**: Customize each line's color
 - **Line Extension**: Adjust how far lines extend to the right
 - **Visual Elements**: Toggle labels and information table
 
-## 📈 Use Cases
+## Use Cases
 
 - **Resistance Trading**: Identify high-probability selling zones
 - **Mean Reversion**: Trade bounces from calculated support/resistance
 - **Multi-Timeframe Analysis**: Apply to any timeframe for different perspectives
 - **Risk Management**: Built-in 1:1 R:R ensures balanced risk exposure
 
-## 🚀 Getting Started
+##  Getting Started
 
 1. Copy the Pine Script code
 2. Open TradingView and create a new Pine Script indicator/strategy
@@ -89,20 +89,20 @@ Accumulates evidence from all candles after base red candle:
 5. Observe the calculated lines on your chart
 6. Strategy trades automatically when conditions are met
 
-## 📋 Requirements
+## Requirements
 
 - TradingView account
 - Pine Script v5 compatible
 - Basic understanding of support/resistance concepts
 
-## ⚙️ Strategy Parameters
+##  Strategy Parameters
 
 - **Base Red Candle Selection**: Year, Month, Day, Hour, Minute
 - **Display Options**: Lines, Labels, Calculation Table
 - **Visual Settings**: Line colors, extension length
 - **Risk Management**: Automatic 1:1 R:R ratio
 
-## 🧮 Strategic Philosophy
+##  Strategic Philosophy
 
 This strategy is based on the principle that **complex mathematical calculations incorporating multiple market factors** create more reliable support and resistance zones than simple technical indicators. By analyzing:
 - Historical price context (previous candle)
@@ -112,27 +112,27 @@ This strategy is based on the principle that **complex mathematical calculations
 
 The strategy identifies zones where market psychology and mathematics align for high-probability reversal points.
 
-## ⚠️ Disclaimer
+##  Disclaimer
 
 This strategy is for educational and research purposes. Past performance does not guarantee future results. Always practice proper risk management and never risk more than you can afford to lose. Test thoroughly on historical data and paper trade before using real capital.
 
-## 📝 Version
+## Version
 
 - **Pine Script Version**: v5
 - **Strategy Version**: 1.0
 - **Last Updated**: January 2026
 
-## 🤝 Contributing
+## Contributing
 
 Feel free to fork this project, submit issues, or create pull requests with improvements.
 
-## 📄 License
+## License
 
 MIT License - Feel free to use and modify for your own trading research.
 
 ---
 
-## 🔗 Related Resources
+## Related Resources
 
 - [TradingView Pine Script Documentation](https://www.tradingview.com/pine-script-docs/)
 - [Pine Script Reference Manual](https://www.tradingview.com/pine-script-reference/v5/)
