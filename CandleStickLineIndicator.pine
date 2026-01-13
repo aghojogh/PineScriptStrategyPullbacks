@@ -1,0 +1,412 @@
+//@version=5
+indicator("Candlestick Line Indicator", overlay=true)
+
+// Input parameters
+base_candle_type = input.string("Red", title="Base Candle Type", options=["Red", "Green", "Any"])
+use_exact_time = input.bool(false, title="Use Exact Time for Base Candle")
+exact_year = input.int(2024, title="Year", minval=2000, maxval=2030)
+exact_month = input.int(1, title="Month", minval=1, maxval=12)
+exact_day = input.int(1, title="Day", minval=1, maxval=31)
+exact_hour = input.int(0, title="Hour (24h format)", minval=0, maxval=23)
+exact_minute = input.int(0, title="Minute", minval=0, maxval=59)
+debug_enabled = input.bool(true, title="Enable Debug Logging")
+
+// Variables to store indicator lines
+var float line1 = na
+var float line2 = na  
+var float line3 = na
+var float line4 = na
+var float line5 = na
+var float line6 = na
+var int base_candle_index = na
+var bool indicator_active = false
+
+// Variables to track Line 2 crosser and waiting
+var int crosser_found_index = na
+var bool waiting_for_candles = false
+
+// Variables for incremental Sum_1 calculation
+var float sum1 = 0.0
+var bool sum1_initialized = false
+var bool monitoring_line4_crossers = false
+
+// Function to check candle type based on user selection
+is_target_candle() =>
+    if use_exact_time
+        // Create target timestamp from user inputs
+        target_timestamp = timestamp(exact_year, exact_month, exact_day, exact_hour, exact_minute)
+        
+        // Debug: Log the target timestamp and current time for comparison
+        if debug_enabled and barstate.isconfirmed
+            log.info("🕐 EXACT TIME DEBUG:")
+            log.info("Target timestamp: " + str.tostring(target_timestamp))
+            log.info("Current bar time: " + str.tostring(time))
+            log.info("Times match: " + str.tostring(time == target_timestamp))
+        
+        // Check if current bar time matches the target time (exact match)
+        time_matches = time == target_timestamp
+        
+        if time_matches
+            if debug_enabled
+                log.info("⏰ EXACT TIME MATCH FOUND!")
+            // If time matches, check candle type
+            switch base_candle_type
+                "Red" => close < open
+                "Green" => close > open
+                "Any" => true
+        else
+            false
+    else
+        // Original logic - any candle of selected type
+        switch base_candle_type
+            "Red" => close < open
+            "Green" => close > open
+            "Any" => true
+
+// Function to check if current candle is red
+is_red_candle() =>
+    close < open
+
+// Function to check if current candle is green  
+is_green_candle() =>
+    close > open
+
+// Function to get candle length (with safety check)
+get_candle_length(index) =>
+    if index <= 5000 and index >= 0
+        math.abs(high[index] - low[index])
+    else
+        0.0
+
+// Function to check if candle crosses a line (with safety check)
+candle_crosses_line(index, line_value) =>
+    if index <= 5000 and index >= 0
+        low[index] <= line_value and high[index] >= line_value
+    else
+        false
+
+// Main indicator logic
+if barstate.isconfirmed
+    // Look for base candle of selected type
+    if is_target_candle() and not indicator_active
+        base_candle_high = high
+        base_candle_low = low
+        base_candle_length = base_candle_high - base_candle_low
+        
+        if debug_enabled
+            candle_color = close < open ? "RED" : (close > open ? "GREEN" : "DOJI")
+            time_info = use_exact_time ? " at EXACT TIME " + str.tostring(time) : ""
+            log.info("🔴 BASE " + base_candle_type + " CANDLE FOUND (" + candle_color + ")" + time_info)
+            log.info("Bar Index: " + str.tostring(bar_index))
+            log.info("Time: " + str.tostring(time))
+            if use_exact_time
+                target_time = timestamp(exact_year, exact_month, exact_day, exact_hour, exact_minute)
+                log.info("Target Time: " + str.tostring(target_time))
+                log.info("Time Match: " + str.tostring(time == target_time))
+            log.info("Open: " + str.tostring(open))
+            log.info("High: " + str.tostring(high))
+            log.info("Low: " + str.tostring(low))
+            log.info("Close: " + str.tostring(close))
+            log.info("Candle Length: " + str.tostring(base_candle_length))
+        
+        // Check candle behind (previous candle)
+        behind_candle_exists = true
+        behind_is_red = is_red_candle()[1]
+        behind_high = high[1]
+        behind_low = low[1]
+        
+        if debug_enabled
+            log.info("📍 BEHIND CANDLE ANALYSIS")
+            log.info("Behind Open: " + str.tostring(open[1]))
+            log.info("Behind High: " + str.tostring(high[1]))
+            log.info("Behind Low: " + str.tostring(low[1]))
+            log.info("Behind Close: " + str.tostring(close[1]))
+            log.info("Behind Is Red: " + str.tostring(behind_is_red))
+            log.info("Behind Is Green: " + str.tostring(close[1] > open[1]))
+        
+        // Calculate Line 1 (always low of base candle)
+        line1 := base_candle_low
+        
+        if debug_enabled
+            log.info("🔵 LINE 1 CALCULATION")
+            log.info("Line 1 = Base Candle Low = " + str.tostring(line1))
+        
+        // Calculate Line 3 based on behind candle
+        if behind_is_red or not behind_candle_exists
+            // Scenario 1: Red candle behind or no candle
+            line3 := base_candle_high + base_candle_length
+            if debug_enabled
+                log.info("🟣 LINE 3 CALCULATION - RED BEHIND SCENARIO")
+                log.info("Line 3 = Base Candle High + Base Candle Length")
+                log.info("Line 3 = " + str.tostring(base_candle_high) + " + " + str.tostring(base_candle_length) + " = " + str.tostring(line3))
+        else
+            // Behind candle is green
+            if behind_high > base_candle_high
+                // Green candle high > base candle high
+                distance = behind_high - base_candle_low
+                line3 := base_candle_low + (2 * distance)
+                if debug_enabled
+                    log.info("🟣 LINE 3 CALCULATION - GREEN BEHIND, HIGH > BASE HIGH")
+                    log.info("Behind High (" + str.tostring(behind_high) + ") > Base Candle High (" + str.tostring(base_candle_high) + ")")
+                    log.info("Distance = Behind High - Base Candle Low = " + str.tostring(behind_high) + " - " + str.tostring(base_candle_low) + " = " + str.tostring(distance))
+                    log.info("Line 3 = Base Candle Low + (2 × Distance) = " + str.tostring(base_candle_low) + " + (2 × " + str.tostring(distance) + ") = " + str.tostring(line3))
+            else
+                // Green candle high <= base candle high
+                line3 := base_candle_high + base_candle_length
+                if debug_enabled
+                    log.info("🟣 LINE 3 CALCULATION - GREEN BEHIND, HIGH <= BASE HIGH")
+                    log.info("Behind High (" + str.tostring(behind_high) + ") <= Base Candle High (" + str.tostring(base_candle_high) + ")")
+                    log.info("Line 3 = Base Candle High + Base Candle Length = " + str.tostring(base_candle_high) + " + " + str.tostring(base_candle_length) + " = " + str.tostring(line3))
+        
+        // Calculate Line 2 (middle of Line 1 and Line 3)
+        line2 := (line1 + line3) / 2
+        
+        if debug_enabled
+            log.info("🟠 LINE 2 CALCULATION")
+            log.info("Line 2 = (Line 1 + Line 3) / 2 = (" + str.tostring(line1) + " + " + str.tostring(line3) + ") / 2 = " + str.tostring(line2))
+            log.info("📋 LINES 1-3 SUMMARY:")
+            log.info("Line 1: " + str.tostring(line1))
+            log.info("Line 2: " + str.tostring(line2))
+            log.info("Line 3: " + str.tostring(line3))
+        
+        // Initialize other variables
+        base_candle_index := bar_index
+        indicator_active := true
+        crosser_found_index := na
+        waiting_for_candles := false
+        sum1 := 0.0  // Reset sum1
+        sum1_initialized := false
+        monitoring_line4_crossers := false
+        
+    // If indicator is active, look for candles crossing Line 2 or handle waiting
+    if indicator_active and na(line4)
+        bars_since_base = bar_index - base_candle_index
+        
+        // Check for timeout (300 bars without finding crosser)
+        if bars_since_base > 300 and na(crosser_found_index)
+            if debug_enabled
+                log.info("⚠️ TIMEOUT: No Line 2 crosser found within 300 bars - Resetting indicator")
+            indicator_active := false
+            line1 := na
+            line2 := na
+            line3 := na
+            base_candle_index := na
+            crosser_found_index := na
+            waiting_for_candles := false
+            sum1 := 0.0
+            sum1_initialized := false
+            monitoring_line4_crossers := false
+        
+        // Look for first candle that crosses Line 2 (within 300 bars)
+        if bars_since_base > 0 and bars_since_base <= 300 and na(crosser_found_index) and candle_crosses_line(0, line2)
+            crosser_found_index := bar_index
+            waiting_for_candles := true
+            
+            if debug_enabled
+                log.info("🔍 FIRST LINE 2 CROSSER FOUND - WAITING FOR 2 MORE CANDLES")
+                log.info("Crosser found at bar index: " + str.tostring(bar_index))
+                log.info("Bars since base: " + str.tostring(bars_since_base))
+                log.info("Current candle OHLC: O:" + str.tostring(open) + " H:" + str.tostring(high) + " L:" + str.tostring(low) + " C:" + str.tostring(close))
+                log.info("Crosses Line 2 (" + str.tostring(line2) + "): " + str.tostring(low) + " <= " + str.tostring(line2) + " <= " + str.tostring(high))
+                log.info("⏳ Waiting for 2 more candles to form...")
+        
+        // Check if we have waited long enough (2 bars after crosser found)
+        if not na(crosser_found_index) and waiting_for_candles
+            bars_since_crosser = bar_index - crosser_found_index
+            
+            if bars_since_crosser >= 2
+                // We have waited long enough, now calculate with all 3 candles
+                waiting_for_candles := false
+                
+                // Calculate distances to get the three candles
+                candle1_distance = bar_index - crosser_found_index  // Distance to crosser from current
+                candle2_distance = candle1_distance - 1            // Next candle after crosser
+                candle3_distance = candle1_distance - 2            // Candle after that
+                
+                // Get the three candle lengths
+                candle1_length = get_candle_length(candle1_distance)  // The crosser
+                candle2_length = get_candle_length(candle2_distance)  // Next candle
+                candle3_length = get_candle_length(candle3_distance)  // Third candle
+                
+                if debug_enabled
+                    log.info("✅ ALL THREE CANDLES NOW AVAILABLE - CALCULATING")
+                    log.info("Bars since crosser found: " + str.tostring(bars_since_crosser))
+                    log.info("📊 THE THREE CANDLES:")
+                    log.info("Candle_1 (crosser at " + str.tostring(crosser_found_index) + "): Length = " + str.tostring(candle1_length))
+                    log.info("Candle_2 (next after crosser): Length = " + str.tostring(candle2_length))
+                    log.info("Candle_3 (third candle): Length = " + str.tostring(candle3_length))
+                
+                // Check crossing conditions for the three candles
+                candle1_crosses = candle_crosses_line(candle1_distance, line2)
+                candle2_crosses = candle_crosses_line(candle2_distance, line2)
+                candle3_crosses = candle_crosses_line(candle3_distance, line2)
+                
+                if debug_enabled
+                    log.info("🎯 CROSSING ANALYSIS:")
+                    log.info("Candle_1 crosses Line 2: " + str.tostring(candle1_crosses))
+                    log.info("Candle_2 crosses Line 2: " + str.tostring(candle2_crosses))
+                    log.info("Candle_3 crosses Line 2: " + str.tostring(candle3_crosses))
+                
+                // Calculate Sum based on scenarios (Simplified)
+                sum = 0.0
+                scenario_used = ""
+                if candle1_crosses and candle2_crosses and candle3_crosses
+                    // Scenario 1: All three cross
+                    sum := candle1_length + candle2_length + candle3_length
+                    scenario_used := "Scenario 1: All three cross"
+                else if candle1_crosses and not candle2_crosses and candle3_crosses
+                    // Scenario 3: First and third cross
+                    sum := candle1_length + candle2_length + candle3_length
+                    scenario_used := "Scenario 3: First and third cross"
+                else
+                    // All other scenarios: Use candle1 + candle2 lengths
+                    sum := candle1_length + candle2_length
+                    scenario_used := "Default: Candle1 + Candle2 lengths"
+                
+                if debug_enabled
+                    log.info("💰 SUM CALCULATION:")
+                    log.info("Candle 1 Length: " + str.tostring(candle1_length) + " ✅")
+                    log.info("Candle 2 Length: " + str.tostring(candle2_length) + " ✅")
+                    log.info("Candle 3 Length: " + str.tostring(candle3_length) + " ✅")
+                    log.info(scenario_used)
+                    if scenario_used == "Scenario 1: All three cross" or scenario_used == "Scenario 3: First and third cross"
+                        log.info("Sum = " + str.tostring(candle1_length) + " + " + str.tostring(candle2_length) + " + " + str.tostring(candle3_length) + " = " + str.tostring(sum))
+                    else
+                        log.info("Sum = " + str.tostring(candle1_length) + " + " + str.tostring(candle2_length) + " = " + str.tostring(sum))
+                
+                // Calculate Line 4
+                line4 := line3 + sum
+                if debug_enabled
+                    log.info("🟤 LINE 4 CALCULATION:")
+                    log.info("Line 4 = Line 3 + Sum = " + str.tostring(line3) + " + " + str.tostring(sum) + " = " + str.tostring(line4))
+                
+                // Calculate Line 5
+                line5 := line1 + (2 * (line4 - line1))
+                if debug_enabled
+                    log.info("🟣 LINE 5 CALCULATION:")
+                    log.info("Line 5 = Line 1 + (2 × (Line 4 - Line 1))")
+                    log.info("Line 5 = " + str.tostring(line1) + " + (2 × (" + str.tostring(line4) + " - " + str.tostring(line1) + "))")
+                    log.info("Line 5 = " + str.tostring(line1) + " + (2 × " + str.tostring(line4 - line1) + ") = " + str.tostring(line5))
+                
+                // Start monitoring for Line 4 crossers
+                monitoring_line4_crossers := true
+                sum1 := 0.0  // Initialize sum1 when we start monitoring
+                sum1_initialized := true
+                
+                if debug_enabled
+                    log.info("📋 INITIAL LINES CALCULATED:")
+                    log.info("Line 1: " + str.tostring(line1))
+                    log.info("Line 2: " + str.tostring(line2))
+                    log.info("Line 3: " + str.tostring(line3))
+                    log.info("Line 4: " + str.tostring(line4))
+                    log.info("Line 5: " + str.tostring(line5))
+                    log.info("🔄 Now monitoring for Line 4 crossers to update Line 6...")
+    
+    // Incremental monitoring for Line 4 crossers
+    if indicator_active and monitoring_line4_crossers and not na(line4)
+        
+        // Check if current confirmed bar crosses Line 4
+        if low < line4 and high > line4
+            part_below = line4 - low
+            sum1 := sum1 + part_below  // ADD to running total
+            
+            if debug_enabled
+                log.info("🎯 Line 4 Crosser Found!")
+                log.info("Bar " + str.tostring(bar_index) + " crosses Line 4 (" + str.tostring(line4) + ")")
+                log.info("Low: " + str.tostring(low) + ", High: " + str.tostring(high))
+                log.info("Part below = " + str.tostring(line4) + " - " + str.tostring(low) + " = " + str.tostring(part_below))
+                log.info("Running Sum_1 = " + str.tostring(sum1))
+
+// Update Line 6 (this happens outside the confirmed bar check so it updates continuously)
+if indicator_active and monitoring_line4_crossers and not na(line5)
+    line6 := line5 + sum1
+    
+    // Debug logging for Line 6 updates (only on confirmed bars to reduce spam)
+    if debug_enabled and barstate.isconfirmed and not na(line6)
+        log.info("💎 Line 6 Update:")
+        log.info("Line 6 = Line 5 (" + str.tostring(line5) + ") + Sum_1 (" + str.tostring(sum1) + ") = " + str.tostring(line6))
+
+// Plot lines
+plot(line1, color=color.blue, linewidth=2, title="Line 1 (Base Low)")
+plot(line2, color=color.orange, linewidth=2, title="Line 2 (Middle)")  
+plot(line3, color=color.purple, linewidth=2, title="Line 3")
+plot(line4, color=color.maroon, linewidth=2, title="Line 4")
+plot(line5, color=color.fuchsia, linewidth=2, title="Line 5")
+plot(line6, color=color.red, linewidth=3, title="Line 6 (Trigger)")
+
+// Signal detection and alerts
+var bool sell_signal = false
+var bool buy_signal = false
+
+if indicator_active and not na(line6)
+    // Detect signals at Line 6
+    if high >= line6 and not sell_signal[1]
+        sell_signal := true
+        buy_signal := false
+        alert("SELL Signal at Line 6: " + str.tostring(line6), alert.freq_once_per_bar)
+    else if low <= line6 and not buy_signal[1]
+        buy_signal := true
+        sell_signal := false
+        alert("BUY Signal at Line 6: " + str.tostring(line6), alert.freq_once_per_bar)
+    else
+        sell_signal := false
+        buy_signal := false
+
+// Visual indicators
+plotshape(indicator_active and bar_index == base_candle_index, style=shape.triangleup, location=location.belowbar, color=color.yellow, size=size.normal, title="Base Candle")
+plotshape(not na(crosser_found_index) and bar_index == crosser_found_index, style=shape.diamond, location=location.abovebar, color=color.lime, size=size.small, title="Line 2 Crosser")
+
+// Signal shapes
+plotshape(sell_signal, style=shape.triangledown, location=location.abovebar, color=color.red, size=size.normal, title="Sell Signal")
+plotshape(buy_signal, style=shape.triangleup, location=location.belowbar, color=color.green, size=size.normal, title="Buy Signal")
+
+// Labels for line values
+if barstate.islast and indicator_active
+    if not na(line1)
+        label.new(bar_index, line1, "Line 1: " + str.tostring(line1, "#.##"), color=color.blue, textcolor=color.white, size=size.small)
+    if not na(line2)  
+        label.new(bar_index, line2, "Line 2: " + str.tostring(line2, "#.##"), color=color.orange, textcolor=color.white, size=size.small)
+    if not na(line3)
+        label.new(bar_index, line3, "Line 3: " + str.tostring(line3, "#.##"), color=color.purple, textcolor=color.white, size=size.small)
+    if not na(line4)
+        label.new(bar_index, line4, "Line 4: " + str.tostring(line4, "#.##"), color=color.maroon, textcolor=color.white, size=size.small)
+    if not na(line5)
+        label.new(bar_index, line5, "Line 5: " + str.tostring(line5, "#.##"), color=color.fuchsia, textcolor=color.white, size=size.small)
+    if not na(line6)
+        label.new(bar_index, line6, "Line 6: " + str.tostring(line6, "#.##"), color=color.red, textcolor=color.white, size=size.small)
+
+// Table showing indicator status
+if barstate.islast
+    var table info_table = table.new(position.top_right, 2, 9, bgcolor=color.white, border_width=1)
+    
+    table.cell(info_table, 0, 0, "Indicator Status", text_color=color.black, bgcolor=color.gray)
+    table.cell(info_table, 1, 0, indicator_active ? "Active" : "Waiting", text_color=color.black)
+    
+    table.cell(info_table, 0, 1, "Base Candle Type", text_color=color.black)
+    table.cell(info_table, 1, 1, base_candle_type, text_color=color.black)
+    
+    table.cell(info_table, 0, 2, "Exact Time Mode", text_color=color.black)
+    table.cell(info_table, 1, 2, use_exact_time ? "ON" : "OFF", text_color=use_exact_time ? color.green : color.gray)
+    
+    table.cell(info_table, 0, 3, "Waiting State", text_color=color.black)
+    table.cell(info_table, 1, 3, waiting_for_candles ? "Waiting for candles" : "Ready", text_color=color.black)
+    
+    table.cell(info_table, 0, 3, "Waiting State", text_color=color.black)
+    table.cell(info_table, 1, 3, waiting_for_candles ? "Waiting for candles" : "Ready", text_color=color.black)
+    
+    table.cell(info_table, 0, 4, "Sum_1", text_color=color.black)
+    table.cell(info_table, 1, 4, monitoring_line4_crossers ? str.tostring(sum1, "#.##") : "N/A", text_color=color.black)
+    
+    table.cell(info_table, 0, 5, "Current Signal", text_color=color.black)
+    current_signal = sell_signal ? "SELL" : (buy_signal ? "BUY" : "None")
+    signal_color = sell_signal ? color.red : (buy_signal ? color.green : color.black)
+    table.cell(info_table, 1, 5, current_signal, text_color=signal_color)
+    
+    table.cell(info_table, 0, 6, "Trigger Price", text_color=color.black)
+    table.cell(info_table, 1, 6, na(line6) ? "N/A" : str.tostring(line6, "#.##"), text_color=color.red)
+    
+    table.cell(info_table, 0, 7, "Line 4 Monitor", text_color=color.black)
+    table.cell(info_table, 1, 7, monitoring_line4_crossers ? "Active" : "Inactive", text_color=color.black)
+    
+    table.cell(info_table, 0, 8, "Debug Mode", text_color=color.black)
+    table.cell(info_table, 1, 8, debug_enabled ? "ON" : "OFF", text_color=debug_enabled ? color.green : color.red)
