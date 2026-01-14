@@ -2,6 +2,8 @@
 
 A sophisticated Pine Script trading strategy for TradingView that uses complex mathematical calculations to identify high-probability resistance and support levels based on a manually selected red candle.
 
+![Screenshot of the project](./PineScriptScreenshot.png)
+
 ## Overview
 
 This strategy builds multiple resistance levels through a series of calculations, creating a "ladder" of price zones that incorporate historical context, market momentum, and selling pressure. It trades both directions (SHORT and LONG) with a 1:1 risk-reward ratio.
